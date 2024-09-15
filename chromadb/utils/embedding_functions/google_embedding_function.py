@@ -88,23 +88,29 @@ class GoogleVertexEmbeddingFunction(EmbeddingFunction[Documents]):
     # https://cloud.google.com/vertex-ai/docs/generative-ai/embeddings/get-text-embeddings
     def __init__(
         self,
-        api_key: str,
-        model_name: str = "textembedding-gecko",
-        project_id: str = "cloud-large-language-models",
-        region: str = "us-central1",
+        model_name: str = "textembedding-gecko@003",
+        task_type: str = "RETRIEVAL_DOCUMENT",
     ):
-        self._api_url = f"https://{region}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{region}/publishers/goole/models/{model_name}:predict"
-        self._session = httpx.Client()
-        self._session.headers.update({"Authorization": f"Bearer {api_key}"})
+
+        try:
+            from vertexai.language_models import TextEmbeddingInput, TextEmbeddingModel
+        except ImportError:
+            raise ValueError(
+                "The Google Generative AI python package is not installed. Please install it with `pip install google-cloud-aiplatform`"
+            )
+
+        self._model_name = model_name
+        self._model = TextEmbeddingModel.from_pretrained(self._model_name)
+        self._task_type = task_type
+        self._task_title = None
+        if self._task_type == "SEMANTIC_SIMILARITY":
+            self._task_title = "Embedding of single string"
 
     def __call__(self, input: Documents) -> Embeddings:
-        embeddings = []
-        for text in input:
-            response = self._session.post(
-                self._api_url, json={"instances": [{"content": text}]}
-            ).json()
+        inputs = [TextEmbeddingInput(
+                    text=text,
+                    task_type=self._task_type,
+                ) for text in input ]
 
-            if "predictions" in response:
-                embeddings.append(response["predictions"]["embeddings"]["values"])
-
-        return embeddings
+        embeddings = self._model.get_embeddings(inputs)
+        return [embedding.values for embedding in embeddings]
